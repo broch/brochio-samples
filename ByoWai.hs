@@ -6,6 +6,7 @@ import Control.Monad.Error (throwError)
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Trans.Either (EitherT, runEitherT)
+import Data.Aeson
 import Data.Maybe (fromMaybe)
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
@@ -13,9 +14,11 @@ import qualified Data.Text.Encoding as TE
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
-import Network.HTTP.Types (ResponseHeaders, Status, internalServerError500, status200, status302, hLocation)
+import Network.HTTP.Types (HeaderName, ResponseHeaders, Status, internalServerError500, status200, status302, hLocation)
 import Network.Wai (Request, Response, queryString, responseLBS, strictRequestBody)
 import Network.Wai.Parse (parseRequestBody, lbsBackEnd)
+import Text.Blaze.Html (Html)
+import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 
 
 type Params = M.Map Text [Text]
@@ -76,4 +79,29 @@ lookupParam name params = case M.lookup name params of
 
 body :: Handler BL.ByteString
 body = asks waiReq >>= liftIO . strictRequestBody
+
+-- Reponse writing
+redirect :: ByteString -> Handler a
+redirect = throwError . Redirect
+
+status :: Status -> Handler ()
+status s = modify $ \rs -> rs { resStatus = s }
+
+text :: Text -> Handler ()
+text t = setContentType "text/plain; charset=utf-8" >> (rawBytes . BL.fromStrict $ TE.encodeUtf8 t)
+
+json :: ToJSON a => a -> Handler ()
+json j = setContentType "application/json" >> rawBytes (encode j)
+
+html :: Html -> Handler ()
+html h = setContentType "text/html; charset=utf-8" >> rawBytes (renderHtml h)
+
+rawBytes :: BL.ByteString -> Handler ()
+rawBytes b = modify (\rs -> rs { content = b }) >> throwError ResponseComplete
+
+setHeader :: HeaderName -> ByteString -> Handler ()
+setHeader name value = modify $ \rs -> rs { resHeaders = (name, value) : resHeaders rs }
+
+setContentType :: ByteString -> Handler ()
+setContentType = setHeader "Content-Type"
 
