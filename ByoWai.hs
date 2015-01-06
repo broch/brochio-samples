@@ -26,4 +26,5 @@ data ResponseState = ResponseState
     }
 
 type Handler a = ReaderT RequestData (StateT ResponseState IO) a
+type Router = [Text] -> Handler ()
 
