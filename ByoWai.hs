@@ -1,7 +1,8 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
 
 module YaWai where
 
+import Control.Exception (SomeException, catch)
 import Control.Monad.Error (throwError)
 import Control.Monad.Reader
 import Control.Monad.State
@@ -15,7 +16,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
 import Network.HTTP.Types (HeaderName, ResponseHeaders, Status, internalServerError500, status200, status302, hLocation)
-import Network.Wai (Request, Response, queryString, responseLBS, strictRequestBody)
+import Network.Wai (Application, Request, Response, queryString, responseLBS, strictRequestBody, pathInfo)
 import Network.Wai.Parse (parseRequestBody, lbsBackEnd)
 import Text.Blaze.Html (Html)
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
@@ -43,6 +44,12 @@ data HandlerResult = Redirect ByteString     -- Redirect to a URL
 type Handler a = EitherT HandlerResult (ReaderT RequestData (StateT ResponseState IO)) a
 
 type Router = [Text] -> Handler ()
+
+routerToApplication :: Router -> Application
+routerToApplication route req respond = do
+  response <- runHandler req (route $ pathInfo req)
+      `catch` \(_ :: SomeException) -> return $ responseLBS internalServerError500 [] "Internal error"
+  respond response
 
 runHandler :: Request -> Handler () -> IO Response
 runHandler req h  = do
@@ -104,4 +111,5 @@ setHeader name value = modify $ \rs -> rs { resHeaders = (name, value) : resHead
 
 setContentType :: ByteString -> Handler ()
 setContentType = setHeader "Content-Type"
+
 
