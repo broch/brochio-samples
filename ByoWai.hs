@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
 
-module YaWai where
-
+import Control.Arrow (second)
 import Control.Exception (SomeException, catch)
 import Control.Monad.Error (throwError)
 import Control.Monad.Reader
@@ -11,16 +10,42 @@ import Data.Aeson
 import Data.Maybe (fromMaybe)
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
+import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
-import Network.HTTP.Types (HeaderName, ResponseHeaders, Status, internalServerError500, status200, status302, hLocation)
+import Network.HTTP.Types (HeaderName, ResponseHeaders, Status, internalServerError500, notFound404, status200, status302, hLocation)
 import Network.Wai (Application, Request, Response, queryString, responseLBS, strictRequestBody, pathInfo)
 import Network.Wai.Parse (parseRequestBody, lbsBackEnd)
-import Text.Blaze.Html (Html)
+import Network.Wai.Handler.Warp (run)
+import qualified Text.Blaze.Html5 as H
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 
+
+-- App
+
+main :: IO ()
+main = run 3000 (routerToApplication myAppRouter)
+
+myAppRouter :: Router
+myAppRouter path = case path of
+  []          -> redirect "/home" -- root
+  ["home"]    -> text "Hello, this is the home page!"
+  ["eek"]     -> error "eeek!"
+  ["user", u] -> html (userPage u)
+  _           -> status notFound404 >> text "Not Found"
+
+
+userPage :: Text -> H.Html
+userPage u = H.docTypeHtml $ H.html $ do
+    H.head $
+        H.title "User"
+    H.body $ do
+        H.h2 "User Information"
+        H.p . H.toHtml $ T.concat ["Hello ", u]
+
+-- "Framework" Stuff
 
 type Params = M.Map Text [Text]
 
@@ -57,7 +82,7 @@ runHandler req h  = do
     let initRes = ResponseState status200 [] ""
         rd = RequestData
               { waiReq      = req
-              , queryParams = toMap $ fmap (\(n, v) -> (n, fromMaybe "" v)) $ queryString req
+              , queryParams = toMap $ fmap (second $ fromMaybe "") (queryString req)
               , postParams  = toMap pParams
               }
 
@@ -100,7 +125,7 @@ text t = setContentType "text/plain; charset=utf-8" >> (rawBytes . BL.fromStrict
 json :: ToJSON a => a -> Handler ()
 json j = setContentType "application/json" >> rawBytes (encode j)
 
-html :: Html -> Handler ()
+html :: H.Html -> Handler ()
 html h = setContentType "text/html; charset=utf-8" >> rawBytes (renderHtml h)
 
 rawBytes :: BL.ByteString -> Handler ()
@@ -111,5 +136,3 @@ setHeader name value = modify $ \rs -> rs { resHeaders = (name, value) : resHead
 
 setContentType :: ByteString -> Handler ()
 setContentType = setHeader "Content-Type"
-
-
